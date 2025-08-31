@@ -1,0 +1,992 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>NATPAC Trip Logger</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>NATPAC Trip Logger</h1>
+
+    <form id="tripForm">
+      <label>Consent <span class="muted">(required)</span></label>
+      <div class="consent-row">
+        <input type="checkbox" id="consent" name="consent" />
+        <label for="consent">I consent to share trip data for NATPAC planning.</label>
+      </div>
+
+      <label for="trip_number">Trip Number</label>
+      <input id="trip_number" name="trip_number" placeholder="auto-generated or you can add" />
+
+      <label for="origin">Origin (text)</label>
+      <input id="origin" name="origin" placeholder="e.g. Home, Sector 15" />
+
+      <label for="destination">Destination (text)</label>
+      <input id="destination" name="destination" placeholder="e.g. Office, Market" />
+
+      <label for="mode">Mode of transport</label>
+      <select id="mode" name="mode">
+        <option value="">-- choose --</option>
+        <option>Walk</option>
+        <option>Bicycle</option>
+        <option>Two-wheeler</option>
+        <option>Car</option>
+        <option>Bus</option>
+        <option>Train/Metro</option>
+        <option>Auto</option>
+        <option>Other</option>
+      </select>
+
+      <label for="accompanying">Accompanying travelers (comma-separated names, optional)</label>
+      <input id="accompanying" name="accompanying" placeholder="e.g. Amit, Sita" />
+
+      <div class="row">
+        <button type="button" id="detectBtn">Detect location & time</button>
+        <button type="submit">Save trip</button>
+      </div>
+
+      <div id="status" class="status"></div>
+    </form>
+
+    <section class="list">
+      <h2>Saved trips (latest 20)</h2>
+      <ul id="tripsList"></ul>
+    </section>
+  </main>
+
+  <script>
+  const apiBase = '/api';
+
+  function uuidv4(){
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){
+      var r = Math.random()*16|0, v = c=='x'? r : (r&0x3|0x8);
+      return v.toString(16);
+    });
+  }
+
+  const form = document.getElementById('tripForm');
+  const status = document.getElementById('status');
+  const detectBtn = document.getElementById('detectBtn');
+  let detected = { origin_lat: null, origin_lng: null, origin_ts: null };
+
+  detectBtn.addEventListener('click', () => {
+    status.textContent = 'Detecting location...';
+    if (!navigator.geolocation) {
+      status.textContent = 'Geolocation not supported by this browser.';
+      return;
+    }
+    navigator.geolocation.getCurrentPosition((pos) => {
+      detected.origin_lat = pos.coords.latitude;
+      detected.origin_lng = pos.coords.longitude;
+      detected.origin_ts = new Date().toISOString();
+      status.textContent = `Location detected (lat: ${detected.origin_lat.toFixed(5)}, lng: ${detected.origin_lng.toFixed(5)})`;
+    }, (err) => {
+      status.textContent = 'Unable to get location: ' + err.message;
+    }, { enableHighAccuracy: true, timeout: 15000 });
+  });
+
+  async function loadTrips(){
+    try{
+      const resp = await fetch(apiBase + '/trips');
+      const data = await resp.json();
+      const ul = document.getElementById('tripsList');
+      ul.innerHTML = '';
+      data.slice(0,20).forEach(t => {
+        const li = document.createElement('li');
+        li.textContent = `${t.timestamp || ''} — ${t.trip_number || ''} — ${t.origin || ''} → ${t.destination || ''} (${t.mode || ''})`;
+        ul.appendChild(li);
+      });
+    }catch(e){ console.log(e); }
+  }
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    status.textContent = '';
+
+    const consent = document.getElementById('consent').checked;
+    if(!consent){ status.textContent = 'You must give consent to save the trip.'; return; }
+
+    const payload = {};
+    payload.trip_number = document.getElementById('trip_number').value || uuidv4();
+    payload.origin = document.getElementById('origin').value;
+    payload.destination = document.getElementById('destination').value;
+    payload.mode = document.getElementById('mode').value;
+    payload.accompanying = document.getElementById('accompanying').value ?
+                          document.getElementById('accompanying').value.split(',').map(s=>s.trim()) : [];
+    payload.consent = consent;
+    payload.timestamp = new Date().toISOString();
+
+    if(detected.origin_lat && detected.origin_lng){
+      payload.origin_lat = detected.origin_lat;
+      payload.origin_lng = detected.origin_lng;
+    }
+
+    try{
+      status.textContent = 'Saving...';
+      const resp = await fetch(apiBase + '/trips', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(!resp.ok){
+        const err = await resp.json().catch(()=>({}));
+        status.textContent = 'Error saving: ' + (err.error || resp.statusText);
+      } else {
+        status.textContent = 'Saved successfully.';
+        form.reset();
+        detected = { origin_lat: null, origin_lng: null };
+        loadTrips();
+      }
+    }catch(e){
+      status.textContent = 'Network error: ' + e.message;
+    }
+  });
+
+  loadTrips();
+  </script>
+</body>
+</html>
+
+<!-- 
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Safar Saathi — NATPAC Trip Logger (Kerala Pilot)</title>
+
+  <style>
+  :root {
+    --bg: #eef6f4;
+    --card-bg: #ffffff;
+    --primary: #0b6b55;
+    --accent: #f59e0b;
+    --primary-hover: #07563e;
+    --text: #0f172a;
+    --muted: #6b7280;
+    --border: #e6eef0;
+    --radius: 14px;
+    --shadow: 0 8px 28px rgba(13, 15, 20, 0.08);
+    --transition: all 0.22s cubic-bezier(.2,.9,.3,1);
+  }
+
+  html,body{height:100%}
+  body {
+    margin: 0; padding: 24px; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    background: radial-gradient(circle at 10% 10%, #e9f6f1 0%, var(--bg) 40%), linear-gradient(180deg, #fff 0%, #fbffff 100%);
+    color: var(--text);
+  }
+
+  .container {
+    max-width: 980px; margin: 0 auto; background: var(--card-bg); padding: 20px;
+    border-radius: var(--radius); box-shadow: var(--shadow); overflow: visible;
+  }
+
+  header.topbar { display:flex; align-items:center; gap:16px; margin-bottom:8px; }
+  .logo-wrap { width:84px; height:84px; border-radius:16px; display:flex; align-items:center; justify-content:center;
+    background: linear-gradient(135deg,#0ea5a1,#06b6d4); box-shadow: 0 8px 20px rgba(3,105,78,0.12); position:relative; overflow:visible; cursor:pointer; }
+  .logo-svg { width:68px; height:68px; transform-origin:center; display:block; transition: filter 0.35s ease; }
+  .logo-glow { position:absolute; inset:0; border-radius:14px; pointer-events:none;
+    background: radial-gradient(closest-side, rgba(255,255,255,0.08), transparent 30%); mix-blend-mode: overlay; }
+
+  h1 { margin:0; font-size:1.15rem; color:var(--primary); }
+  h2 { margin:0; font-size:1rem; color:var(--text); opacity:0.9; }
+
+  label { display:block; margin-top:12px; font-weight:600; font-size:0.95rem; }
+  input, select, button, textarea { width:100%; padding:10px; margin-top:6px; border-radius:10px; border:1px solid var(--border);
+    font-size:0.95rem; transition:var(--transition); box-sizing:border-box; background:white; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 6px 16px rgba(6,150,120,0.08); }
+
+  button { background: linear-gradient(90deg,var(--primary), var(--primary-hover)); color:white; font-weight:700; border:none; padding:12px; cursor:pointer; }
+  button.secondary { background:#fff; border:1px solid var(--border); color:var(--text); }
+  button:hover { transform: translateY(-2px); box-shadow:0 8px 24px rgba(6,150,120,0.12); }
+
+  .row { display:flex; gap:8px; margin-top:12px; }
+  .row button { flex:1; }
+
+  .status { margin-top:12px; color:var(--primary); font-weight:600; min-height:20px; }
+  .muted { color:var(--muted); font-weight:400; font-size:0.9rem; }
+
+  .list { margin-top:18px; padding:14px; background:#fbfffc; border-radius:10px; border:1px solid var(--border); }
+  ul { padding-left:18px; margin:0; }
+  li { padding:8px 0; font-size:0.92rem; border-bottom:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  li:last-child{ border-bottom:none; }
+
+  .consent-row { display:flex; gap:8px; align-items:center; margin-top:6px; }
+  input[type="checkbox"] { width:auto; margin-top:0; transform:scale(1.15); accent-color:var(--primary); }
+
+  .kerala-grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-top:18px; }
+  .place-card { border-radius:12px; overflow:hidden; background:#fff; border:1px solid var(--border);
+    box-shadow:0 6px 18px rgba(0,0,0,0.04); transition:var(--transition); cursor:pointer; }
+  .place-card:hover { transform:translateY(-6px); box-shadow:0 14px 40px rgba(0,0,0,0.06); }
+  .place-img { width:100%; height:110px; object-fit:cover; display:block; }
+  .place-body { padding:10px; }
+  .place-title { font-weight:700; color:var(--primary); margin:0 0 6px 0; }
+  .place-sub { font-size:0.85rem; color:var(--muted); margin:0; }
+
+  .modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:9999;
+    background:linear-gradient(180deg, rgba(5,10,8,0.4), rgba(5,10,8,0.6)); padding:18px; }
+  .modal.open { display:flex; }
+  .modal-card { width:90%; max-width:720px; background:white; border-radius:12px; padding:18px; box-shadow:0 18px 60px rgba(0,0,0,0.4); }
+
+  .games { margin-top:18px; padding:12px; border-radius:12px; background:linear-gradient(180deg,#ffffff,#f8fffb); border:1px solid var(--border); }
+  .game-tabs { display:flex; gap:8px; margin-bottom:12px; }
+  .game-tabs button { padding:8px 12px; background:#fff; border:1px solid var(--border); cursor:pointer; border-radius:10px; font-weight:600; }
+  .game-tabs button.active { background: linear-gradient(90deg,var(--accent), #f97316); color:white; box-shadow: 0 8px 22px rgba(249,115,22,0.12); }
+
+  .match-grid { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; }
+  .match-images { display:flex; gap:8px; flex-wrap:wrap; width:60%; }
+  .match-bank { width:40%; display:flex; flex-direction:column; gap:8px; }
+  .drag-img { width:120px; height:90px; object-fit:cover; border-radius:8px; border:2px solid var(--border); cursor:grab; }
+  .drop-slot { min-height:40px; border:2px dashed var(--border); padding:8px; border-radius:8px; background:#fff; display:flex; align-items:center; }
+
+  .boat-canvas { width:100%; height:160px; background: linear-gradient(180deg,#bce7ff,#67c6a1); border-radius:12px; overflow:hidden; position:relative; }
+  .boat { width:48px; height:32px; position:absolute; left:18px; top:64px; transition: top 0.1s linear; }
+  .obstacle { width:22px; height:22px; position:absolute; right:-30px; top:20px; background:#8b5cf6; border-radius:4px; }
+
+  @media (min-width:760px) { .row { gap:12px; } }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header class="topbar">
+      <div class="logo-wrap" aria-hidden="true" id="logoWrap">
+        <svg id="appLogo" class="logo-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Safar Saathi logo">
+          <defs>
+            <linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#05a081"/><stop offset="1" stop-color="#053f6a"/></linearGradient>
+          </defs>
+          <path d="M8 64 Q40 88 92 64 L80 48 Q40 68 12 48 Z" fill="url(#g1)"/>
+          <circle cx="46" cy="28" r="14" fill="#ffd166" />
+          <path d="M36 28 Q46 18 56 28" stroke="#0b3d2e" stroke-width="2.2" fill="none"/>
+        </svg>
+        <div class="logo-glow"></div>
+      </div>
+
+      <div style="flex:1;">
+        <h1>Safar Saathi — NATPAC Trip Logger</h1>
+        <h2 class="muted">Kerala Pilot • Anonymous, consent-based travel diary</h2>
+      </div>
+
+      <div style="text-align:right; min-width:120px;">
+        <small class="muted">Kerala theme</small>
+        <div style="margin-top:6px">
+          <button id="aboutBtn" style="padding:8px 10px; background:linear-gradient(90deg,#06b6d4,#0ea5a1); border-radius:10px; color:#fff; font-weight:700">About</button>
+        </div>
+      </div>
+    </header>
+
+    <form id="tripForm" class="card" autocomplete="off">
+      <label>Consent <span class="muted">(required)</span></label>
+      <div class="consent-row">
+        <input type="checkbox" id="consent" name="consent" />
+        <label for="consent" class="muted">I consent to share trip data for NATPAC planning (anonymized).</label>
+      </div>
+
+      <label for="trip_number">Trip Number</label>
+      <input id="trip_number" name="trip_number" placeholder="auto-generated or you can add" />
+
+      <label for="origin">Origin (text)</label>
+      <input id="origin" name="origin" placeholder="e.g. Home, Sector 15" />
+
+      <label for="destination">Destination (text)</label>
+      <input id="destination" name="destination" placeholder="e.g. Office, Market" />
+
+      <label for="mode">Mode of transport</label>
+      <select id="mode" name="mode">
+        <option value="">-- choose --</option>
+        <option>Walk</option>
+        <option>Bicycle</option>
+        <option>Two-wheeler</option>
+        <option>Car</option>
+        <option>Bus</option>
+        <option>Train/Metro</option>
+        <option>Auto</option>
+        <option>Other</option>
+      </select>
+
+      <label for="accompanying">Accompanying travelers (comma-separated names, optional)</label>
+      <input id="accompanying" name="accompanying" placeholder="e.g. Amit, Sita" />
+
+      <div class="row">
+        <button type="button" id="detectBtn">Detect location & time</button>
+        <button type="submit">Save trip</button>
+      </div>
+
+      <div id="status" class="status"></div>
+    </form>
+
+    <section style="margin-top:18px;">
+      <h2 style="margin-bottom:8px;">Explore Kerala — Places & Stories</h2>
+      <p class="muted" style="margin:0 0 10px 0">Tap any card to read a short history.</p>
+      <div class="kerala-grid" id="placesGrid"></div>
+    </section>
+
+    <section class="games" aria-label="mini games">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 style="margin:0">Quick Games — Earn Badges</h2>
+        <div class="muted">Small, fun, and offline-friendly</div>
+      </div>
+
+      <div class="game-tabs" role="tablist" style="margin-top:10px;">
+        <button id="tabMatch" class="active" role="tab">Match Landmark</button>
+        <button id="tabBoat" role="tab">Backwater Boat</button>
+      </div>
+
+      <div id="gameArea">
+        <div id="matchGame" style="display:block">
+          <div class="match-grid">
+            <div class="match-images" id="matchImages"></div>
+            <div class="match-bank" id="matchBank">
+              <div class="muted">Drag the image to the correct name slot.</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:12px;">
+            <button id="resetMatch" class="secondary">Reset</button>
+            <button id="checkMatch">Check</button>
+          </div>
+          <div id="matchScore" class="status" style="margin-top:10px"></div>
+        </div>
+
+        <div id="boatGame" style="display:none">
+          <p class="muted">Tap the canvas to make the boat jump and avoid obstacles. Survive 25 seconds to win a badge!</p>
+          <div class="boat-canvas" id="boatCanvas">
+            <img alt="boat" class="boat" id="boatEl" style="left:18px; top:64px;" />
+          </div>
+          <div class="row" style="margin-top:10px;">
+            <button id="startBoat">Start</button>
+            <button id="stopBoat" class="secondary">Stop</button>
+          </div>
+          <div id="boatStatus" class="status" style="margin-top:10px"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="list card">
+      <h2>Saved trips (latest 20)</h2>
+      <ul id="tripsList"></ul>
+    </section>
+  </main>
+
+  <div id="modal" class="modal" role="dialog" aria-modal="true">
+    <div class="modal-card" id="modalCard">
+      <button id="closeModal" style="float:right; background:transparent; border:none; font-size:18px; cursor:pointer">✕</button>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+<script>
+/* -------------------------
+   Single-file app JS (corrected)
+   - uses localStorage fallback so it works without a backend
+   - all string templates properly use backticks
+   -------------------------*/
+
+const apiBase = '/api'; // keep if you later have a backend
+const LS_KEY = 'safar_trips_v1';
+
+function uuidv4(){
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){
+    const r = Math.random()*16|0, v = c==='x'? r : (r&0x3|0x8);
+    return v.toString(16);
+  });
+}
+
+/* small splash auto-hide (if you add a #splash it will hide) */
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const splash = document.getElementById('splash');
+    if (splash) splash.style.display = 'none';
+  }, 1200);
+});
+
+/* logo animation */
+const logo = document.getElementById('appLogo');
+let logoPhase = 0;
+function animateLogoPhase(){
+  if(!logo) return;
+  logo.style.transition = 'transform 0.8s cubic-bezier(.2,.9,.3,1), filter 0.6s ease, opacity 0.8s ease';
+  if(logoPhase === 0){
+    logo.style.transform = 'scale(1.06)';
+    logo.style.filter = 'blur(0px)';
+    logo.style.opacity = '1';
+    setTimeout(()=> { logoPhase = 1; animateLogoPhase(); }, 3500);
+  } else if(logoPhase === 1){
+    logo.style.filter = 'blur(4px) saturate(0.95)';
+    setTimeout(()=> { logoPhase = 2; animateLogoPhase(); }, 1000);
+  } else if(logoPhase === 2){
+    logo.style.opacity = '0';
+    setTimeout(()=> { logoPhase = 3; animateLogoPhase(); }, 1000);
+  } else {
+    logo.style.transform = 'scale(1)';
+    logo.style.filter = 'blur(0px)';
+    logo.style.opacity = '1';
+    setTimeout(()=> { logoPhase = 0; animateLogoPhase(); }, 500);
+  }
+}
+animateLogoPhase();
+
+/* focus form when clicking logo area */
+const logoWrap = document.getElementById('logoWrap');
+if(logoWrap){
+  logoWrap.addEventListener('click', ()=> {
+    const el = document.getElementById('trip_number');
+    if(el) el.focus();
+  });
+}
+
+/* ---------- storage helpers ---------- */
+function loadLocalTrips(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return [];
+    const arr = JSON.parse(raw);
+    if(Array.isArray(arr)) return arr;
+    return [];
+  }catch(e){ return []; }
+}
+function saveLocalTrip(trip){
+  const arr = loadLocalTrips();
+  arr.unshift(trip);
+  // keep only recent 200 locally
+  localStorage.setItem(LS_KEY, JSON.stringify(arr.slice(0,200)));
+}
+
+/* ---------- trips load + render (tries server then local) ---------- */
+async function loadTrips(){
+  const statusEl = document.getElementById('status');
+  let serverData = [];
+  try{
+    const resp = await fetch(apiBase + '/trips');
+    if(resp.ok){
+      serverData = await resp.json();
+    }
+  }catch(e){
+    // ignore — server may be absent; we will rely on localStorage
+    console.log('Server trips not available, using local storage only.');
+  }
+
+  const local = loadLocalTrips();
+  // combine, prefer server timestamps if available
+  const combined = [...local, ...(Array.isArray(serverData) ? serverData : [])];
+  // normalize timestamp field
+  combined.forEach(t => {
+    if(!t.timestamp && t.time) t.timestamp = t.time;
+  });
+  // sort by timestamp desc if possible
+  combined.sort((a,b) => {
+    const at = new Date(a.timestamp || a.created_at || 0).getTime();
+    const bt = new Date(b.timestamp || b.created_at || 0).getTime();
+    return bt - at;
+  });
+
+  const ul = document.getElementById('tripsList');
+  if(!ul) return;
+  ul.innerHTML = '';
+  const toShow = combined.slice(0,20);
+  if(toShow.length === 0){
+    ul.innerHTML = '<li class="muted">No trips yet. Try detecting location and saving a trip.</li>';
+    return;
+  }
+
+  toShow.forEach(t => {
+    const li = document.createElement('li');
+    const left = document.createElement('div');
+    left.style.flex = '1';
+    const tripNum = t.trip_number || t.id || t._id || '';
+    const when = new Date(t.timestamp || t.created_at || t.time || '').toLocaleString() || '';
+    left.innerHTML = `<strong style="color:var(--primary)">${tripNum}</strong>
+      <div class="muted" style="font-size:0.9rem">${t.origin || ''} → ${t.destination || ''}</div>`;
+    const right = document.createElement('div');
+    right.innerHTML = `<div class="muted">${t.mode || ''}</div>
+      <div style="font-size:0.78rem;color:var(--muted)">${when}</div>`;
+    li.appendChild(left); li.appendChild(right);
+    ul.appendChild(li);
+  });
+}
+
+/* ---------- detection + form submit ---------- */
+const form = document.getElementById('tripForm');
+const status = document.getElementById('status');
+const detectBtn = document.getElementById('detectBtn');
+let detected = { origin_lat: null, origin_lng: null, origin_ts: null };
+
+if(detectBtn){
+  detectBtn.addEventListener('click', () => {
+    if(!status) return;
+    status.textContent = 'Detecting location...';
+    if (!navigator.geolocation) {
+      status.textContent = 'Geolocation not supported by this browser.';
+      return;
+    }
+    navigator.geolocation.getCurrentPosition((pos) => {
+      detected.origin_lat = pos.coords.latitude;
+      detected.origin_lng = pos.coords.longitude;
+      detected.origin_ts = new Date().toISOString();
+      status.textContent = `Location detected ✅ (lat: ${detected.origin_lat.toFixed(5)}, lng: ${detected.origin_lng.toFixed(5)})`;
+      const originEl = document.getElementById('origin');
+      if(originEl && !originEl.value) originEl.value = `${detected.origin_lat.toFixed(5)}, ${detected.origin_lng.toFixed(5)}`;
+
+    }, (err) => {
+      status.textContent = 'Unable to get location: ' + err.message;
+    }, { enableHighAccuracy: true, timeout: 15000 });
+  });
+}
+
+if(form){
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if(!status) return;
+    status.textContent = '';
+
+    const consent = document.getElementById('consent') && document.getElementById('consent').checked;
+    if(!consent){
+      status.textContent = '⚠ You must give consent to save the trip.';
+      return;
+    }
+
+    const payload = {
+      trip_number: document.getElementById('trip_number')?.value || uuidv4(),
+      origin: document.getElementById('origin')?.value || '',
+      destination: document.getElementById('destination')?.value || '',
+      mode: document.getElementById('mode')?.value || '',
+      accompanying: (document.getElementById('accompanying')?.value || '').trim()
+                    ? document.getElementById('accompanying').value.split(',').map(s=>s.trim()).filter(Boolean)
+                    : [],
+      consent: consent,
+      timestamp: new Date().toISOString()
+    };
+
+    if(detected.origin_lat && detected.origin_lng){
+      payload.origin_lat = detected.origin_lat;
+      payload.origin_lng = detected.origin_lng;
+    }
+
+    // Optimistic: save to local storage first so UI updates immediately
+    try{
+      saveLocalTrip(payload);
+      status.textContent = 'Saving...';
+      // attempt to push to server (optional)
+      try{
+        const resp = await fetch(apiBase + '/trips', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        if(!resp.ok){
+          // still considered saved locally
+          console.warn('Server save failed, trip saved locally.');
+          status.textContent = '✅ Trip saved locally (server unavailable).';
+        } else {
+          status.textContent = '✅ Trip saved successfully!';
+        }
+      }catch(e){
+        status.textContent = '✅ Trip saved locally (offline).';
+      }
+
+      // reset form & state
+      form.reset();
+      detected = { origin_lat: null, origin_lng: null, origin_ts: null };
+      loadTrips();
+    }catch(e){
+      status.textContent = 'Save error: ' + (e.message || 'unknown');
+    }
+  });
+}
+
+/* ---------- places gallery ---------- */
+const places = [
+  {
+    id: 'munnar',
+    title: 'Munnar',
+    subtitle: 'Tea gardens & misty hills',
+    img: 'https://images.unsplash.com/photo-1549887534-9c56dfc0a2d5?q=80&w=1200&auto=format&fit=crop&ixlib=rb-4.0.3&s=2b05b4b4b3b7d21b6c6f3f3b2d2b6a4e',
+    history: `<h3>Munnar</h3>
+      <p>Munnar is a hill station and former resort for the British in the Western Ghats. Famous for its endless tea gardens, misty valleys, and the Eravikulam National Park. The region's tea plantations were established in the late 19th century and have shaped its cultural landscape.</p>`
+  },
+  {
+    id: 'kovalam',
+    title: 'Kovalam',
+    subtitle: 'Palm-fringed beaches',
+    img: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1200&auto=format&fit=crop&ixlib=rb-4.0.3&s=bc7f3a8b7a5b8d3e9b4c2f7d2a3a6bde',
+    history: `<h3>Kovalam</h3>
+      <p>Kovalam is a beach town known for its crescent-shaped coastline and lighthouse. Once a small fishing village, it gained popularity among international travelers in the 20th century and is now a hub for Ayurvedic retreats and tranquil beaches.</p>`
+  },
+  {
+    id: 'fortkochi',
+    title: 'Fort Kochi',
+    subtitle: 'Colonial history & spice trade',
+    img: 'https://images.unsplash.com/photo-1562003389-8f8392b4d2b1?q=80&w=1200&auto=format&fit=crop&ixlib=rb-4.0.3&s=4d6f6c7b1a2e3f4b6b6d2a9c3f1a2c7d',
+    history: `<h3>Fort Kochi</h3>
+    <p>Fort Kochi bears traces of Portuguese, Dutch, and British colonial history. Its waterfront, Chinese fishing nets, and spice markets are a living museum of Kerala's maritime past.</p>`
+  },
+  {
+    id: 'sabarimala',
+    title: 'Sabarimala',
+    subtitle: 'Pilgrimage & hills',
+    img: 'https://images.unsplash.com/photo-1518637425149-29a6f4d3f8f3?q=80&w=1200&auto=format&fit=crop&ixlib=rb-4.0.3&s=1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d',
+    history: `<h3>Sabarimala</h3>
+    <p>Sabarimala is one of the largest annual pilgrimages in the world, dedicated to Lord Ayyappa. Pilgrims follow strict traditions and a challenging trek into the Periyar Tiger Reserve area near the Western Ghats.</p>`
+  }
+];
+
+const placesGrid = document.getElementById('placesGrid');
+const modal = document.getElementById('modal');
+const modalContent = document.getElementById('modalContent');
+const closeModal = document.getElementById('closeModal');
+
+function renderPlaces(){
+  if(!placesGrid) return;
+  placesGrid.innerHTML = '';
+  places.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'place-card';
+    card.innerHTML = `<img class="place-img" src="${p.img}" alt="${p.title}" loading="lazy" />
+                      <div class="place-body">
+                        <div class="place-title">${p.title}</div>
+                        <div class="place-sub">${p.subtitle}</div>
+                      </div>`;
+    card.addEventListener('click', ()=> {
+      modalContent.innerHTML = `<div style="display:flex;gap:12px;align-items:flex-start;">
+        <img src="${p.img}" alt="${p.title}" style="width:160px;height:110px;object-fit:cover;border-radius:8px" />
+        <div style="flex:1;padding-right:6px">${p.history}</div>
+      </div>
+      <div style="margin-top:12px;">
+        <strong class="muted">Quick facts:</strong>
+        <ul style="margin-top:6px">
+          <li>Great for local experiences & culture</li>
+          <li>Suggested to visit early morning or late afternoon</li>
+          <li>Respect local customs & environment</li>
+        </ul>
+      </div>`;
+      modal.classList.add('open');
+    });
+    placesGrid.appendChild(card);
+  });
+}
+renderPlaces();
+
+if(closeModal){
+  closeModal.addEventListener('click', ()=> modal.classList.remove('open'));
+  modal.addEventListener('click', (e)=> { if(e.target === modal) modal.classList.remove('open'); });
+}
+
+/* ---------- Match landmark game ---------- */
+const matchImages = document.getElementById('matchImages');
+const matchBank = document.getElementById('matchBank');
+const matchItems = [
+  { id:'m1', name:'Munnar', img: places.find(p=>p.id==='munnar').img },
+  { id:'m2', name:'Kovalam', img: places.find(p=>p.id==='kovalam').img },
+  { id:'m3', name:'Fort Kochi', img: places.find(p=>p.id==='fortkochi').img }
+];
+
+let currentMatches = {};
+
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a; }
+
+function setupMatchGame(){
+  if(!matchImages || !matchBank) return;
+  matchImages.innerHTML=''; matchBank.innerHTML='';
+  const imgs = shuffle(matchItems.slice());
+  imgs.forEach(it=>{
+    const img = document.createElement('img');
+    img.src = it.img; img.className='drag-img'; img.draggable=true; img.id = it.id;
+    img.addEventListener('dragstart', (ev)=> {
+      ev.dataTransfer.setData('text/plain', it.id);
+      ev.dataTransfer.effectAllowed = 'move';
+    });
+    matchImages.appendChild(img);
+  });
+
+  const names = shuffle(matchItems.map(m=>m.name));
+  names.forEach(name=>{
+    const slot = document.createElement('div');
+    slot.className = 'drop-slot';
+    slot.dataset.target = name;
+    slot.innerHTML = <strong style="font-size:0.95rem">${name}</strong>;
+    slot.addEventListener('dragover', (ev)=> { ev.preventDefault(); ev.dataTransfer.dropEffect='move'; slot.style.borderColor='var(--primary)'; });
+    slot.addEventListener('dragleave', ()=> { slot.style.borderColor='var(--border)'; });
+    slot.addEventListener('drop', (ev)=> {
+      ev.preventDefault();
+      slot.style.borderColor='var(--border)';
+      const id = ev.dataTransfer.getData('text/plain');
+      const dragged = document.getElementById(id);
+      if(!dragged) return;
+      const thumb = dragged.cloneNode(true);
+      thumb.style.width='60px'; thumb.style.height='44px'; thumb.style.cursor='default';
+      thumb.draggable = false;
+      const existing = slot.querySelector('img');
+      if(existing) existing.remove();
+      slot.appendChild(thumb);
+      currentMatches[name] = id;
+    });
+    matchBank.appendChild(slot);
+  });
+  currentMatches = {};
+  const scoreEl = document.getElementById('matchScore');
+  if(scoreEl) scoreEl.textContent = '';
+}
+const resetMatchBtn = document.getElementById('resetMatch');
+if(resetMatchBtn) resetMatchBtn.addEventListener('click', setupMatchGame);
+
+const checkMatchBtn = document.getElementById('checkMatch');
+if(checkMatchBtn){
+  checkMatchBtn.addEventListener('click', ()=> {
+    let correct = 0;
+    const total = matchItems.length;
+    matchItems.forEach(it=>{
+      const slotName = Object.keys(currentMatches).find(k=> currentMatches[k]===it.id );
+      if(slotName && slotName.toLowerCase().includes(it.name.toLowerCase())) correct++;
+    });
+    const msg = `You matched ${correct} out of ${total}. ${correct === total ? 'Excellent! You earned a Culture Badge 🎖' : ''}`;
+    const scoreEl = document.getElementById('matchScore');
+    if(scoreEl) scoreEl.textContent = msg;
+  });
+}
+setupMatchGame();
+
+/* ---------- Boat race game ---------- */
+const boatCanvas = document.getElementById('boatCanvas');
+const boatEl = document.getElementById('boatEl');
+if(boatEl){
+  const boatSvg = `<svg xmlns='http://www.w3.org/2000/svg' width='48' height='32' viewBox='0 0 48 32'>
+    <rect rx='6' width='48' height='32' fill='none' opacity='0'/>
+    <path d='M6 22 Q24 34 42 22 L36 16 Q24 24 12 16 Z' fill='#053f6a'/>
+    <circle cx='24' cy='13' r='6' fill='#ffd166'/>
+  </svg>`;
+  boatEl.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(boatSvg);
+}
+
+let boatInterval = null; let obstacles = []; let boatTop = 64; let boatAlive = true; let startTime = null;
+function startBoat(){
+  if(!boatCanvas || !boatEl) return;
+  // reset
+  obstacles.forEach(o=> o.remove());
+  obstacles = [];
+  boatTop = 64; boatAlive = true;
+  boatEl.style.top = boatTop + 'px';
+  const boatStatus = document.getElementById('boatStatus');
+  if(boatStatus) boatStatus.textContent = 'Playing...';
+  startTime = Date.now();
+  boatInterval = setInterval(()=> {
+    spawnObstacle();
+    // move obstacles (iterate backwards)
+    for(let i = obstacles.length - 1; i >= 0; i--){
+      const ob = obstacles[i];
+      const current = parseFloat(ob.style.right || '-30px');
+      const next = current + 6; // move leftwards
+      ob.style.right = next + 'px';
+      const leftEdge = 18;
+      const obLeftPos = boatCanvas.clientWidth - next;
+      if(obLeftPos < leftEdge + 44 && obLeftPos > leftEdge - 10){
+        const obTop = parseFloat(ob.style.top);
+        if(Math.abs(obTop - boatTop) < 24 && boatAlive){
+          boatAlive = false;
+          if(boatStatus) boatStatus.textContent = 'Crashed! Try again.';
+          stopBoat();
+        }
+      }
+      if(next > boatCanvas.clientWidth + 40){
+        ob.remove();
+        obstacles.splice(i,1);
+      }
+    }
+    // winning condition: survive 25 seconds
+    if(boatAlive && (Date.now() - startTime) > 25000){
+      boatAlive = false;
+      if(boatStatus) boatStatus.textContent = 'You survived! You earned a Backwater Badge 🛶';
+      stopBoat();
+    }
+  }, 200);
+}
+
+function spawnObstacle(){
+  if(!boatCanvas) return;
+  const ob = document.createElement('div');
+  ob.className = 'obstacle';
+  const top = Math.floor(Math.random() * 120) + 12;
+  ob.style.top = top + 'px';
+  ob.style.right = '-30px';
+  boatCanvas.appendChild(ob);
+  obstacles.push(ob);
+}
+
+function stopBoat(){
+  clearInterval(boatInterval);
+  boatInterval = null;
+}
+
+if(boatCanvas){
+  boatCanvas.addEventListener('click', ()=>{
+    if(!boatAlive) return;
+    boatTop -= 28;
+    if(boatTop < 8) boatTop = 8;
+    if(boatEl) boatEl.style.top = boatTop + 'px';
+    const fall = setInterval(()=> {
+      if(boatTop >= 110){ clearInterval(fall); return; }
+      boatTop += 6; if(boatEl) boatEl.style.top = boatTop + 'px';
+      if(!boatAlive) clearInterval(fall);
+    }, 90);
+  });
+}
+
+const startBoatBtn = document.getElementById('startBoat');
+const stopBoatBtn = document.getElementById('stopBoat');
+if(startBoatBtn) startBoatBtn.addEventListener('click', ()=> { stopBoat(); startBoat(); });
+if(stopBoatBtn) stopBoatBtn.addEventListener('click', ()=> { stopBoat(); const bs = document.getElementById('boatStatus'); if(bs) bs.textContent = 'Stopped.'; });
+
+/* ---------- Tab toggles ---------- */
+const tabMatch = document.getElementById('tabMatch');
+const tabBoat = document.getElementById('tabBoat');
+if(tabMatch) tabMatch.addEventListener('click', ()=> {
+  document.getElementById('matchGame').style.display='block';
+  document.getElementById('boatGame').style.display='none';
+  tabMatch.classList.add('active');
+  tabBoat.classList.remove('active');
+});
+if(tabBoat) tabBoat.addEventListener('click', ()=> {
+  document.getElementById('matchGame').style.display='none';
+  document.getElementById('boatGame').style.display='block';
+  tabBoat.classList.add('active');
+  tabMatch.classList.remove('active');
+});
+
+/* ---------- About modal ---------- */
+const aboutBtn = document.getElementById('aboutBtn');
+if(aboutBtn){
+  aboutBtn.addEventListener('click', ()=> {
+    modalContent.innerHTML = `<h3>Safar Saathi — Kerala Pilot (Demo)</h3>
+      <p class="muted">This demo collects anonymized trip patches for NATPAC planning. Consent is required before saving any trip. We use playful Kerala-themed badges and small games to encourage logging habits.</p>
+      <ul style="margin-top:8px">
+        <li>Automated trip logs (GPS optional)</li>
+        <li>Gamification: badges for streak & accuracy</li>
+        <li>Kerala places gallery with short histories</li>
+        <li>Researcher endpoints provide aggregated heatmaps (server-side)</li>
+      </ul>
+      <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
+        <button id="closeAbout" style="background:#0b6b55;padding:8px 10px;border-radius:8px;color:#fff;font-weight:700">Close</button>
+      </div>`;
+    modal.classList.add('open');
+    const closeAbout = document.getElementById('closeAbout');
+    if(closeAbout) closeAbout.addEventListener('click', ()=> modal.classList.remove('open'));
+  });
+}
+
+/* keyboard accessibility */
+document.addEventListener('keydown',(e)=> { if(e.key==='Escape') modal.classList.remove('open'); });
+
+/* initial load */
+loadTrips();
+
+</script>
+</style>
+</head>
+<body>
+  <h1>Trip Data Collection</h1>
+
+  <form id="tripForm">
+    <label>Trip Number</label>
+    <input type="text" id="trip_number" required />
+
+    <label>Origin</label>
+    <input type="text" id="origin" required />
+
+    <label>Origin Lat</label>
+    <input type="number" step="any" id="origin_lat" required />
+
+    <label>Origin Lng</label>
+    <input type="number" step="any" id="origin_lng" required />
+
+    <label>Destination</label>
+    <input type="text" id="destination" required />
+
+    <label>Destination Lat</label>
+    <input type="number" step="any" id="destination_lat" required />
+
+    <label>Destination Lng</label>
+    <input type="number" step="any" id="destination_lng" required />
+
+    <label>Mode</label>
+    <select id="mode" required>
+      <option value="car">Car</option>
+      <option value="bus">Bus</option>
+      <option value="bike">Bike</option>
+      <option value="walk">Walk</option>
+    </select>
+
+    <label>Duration (seconds)</label>
+    <input type="number" id="duration_seconds" />
+
+    <label>Accompanying (comma separated)</label>
+    <input type="text" id="accompanying" />
+
+    <label>
+      <input type="checkbox" id="consent" /> Consent
+    </label>
+
+    <button type="submit">Submit Trip</button>
+  </form>
+
+  <h2>Previous Trips</h2>
+  <div id="tripList"></div>
+
+  <!-- अब JS सीधा यहीं पर लिखा है -->
+  <!-- <script>
+    const form = document.getElementById('tripForm');
+    const tripList = document.getElementById('tripList');
+
+    async function fetchTrips() {
+      const res = await fetch('/api/trips');
+      const data = await res.json();
+      tripList.innerHTML = '';
+      data.forEach(trip => {
+        const div = document.createElement('div');
+        div.className = 'trip-card';
+        div.innerHTML = `
+          <h3>Trip ${trip.trip_number}</h3>
+          <p><strong>From:</strong> ${trip.origin} → <strong>To:</strong> ${trip.destination}</p>
+          <p><strong>Mode:</strong> ${trip.mode}</p>
+          <p><strong>Timestamp:</strong> ${trip.timestamp}</p>
+          <p><strong>Consent:</strong> ${trip.consent ? 'Yes' : 'No'}</p>
+        `;
+        tripList.appendChild(div);
+      });
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const payload = {
+        trip_number: document.getElementById('trip_number').value,
+        origin: document.getElementById('origin').value,
+        origin_lat: parseFloat(document.getElementById('origin_lat').value),
+        origin_lng: parseFloat(document.getElementById('origin_lng').value),
+        destination: document.getElementById('destination').value,
+        destination_lat: parseFloat(document.getElementById('destination_lat').value),
+        destination_lng: parseFloat(document.getElementById('destination_lng').value),
+        mode: document.getElementById('mode').value,
+        duration_seconds: parseInt(document.getElementById('duration_seconds').value) || null,
+        accompanying: document.getElementById('accompanying').value.split(',').map(s => s.trim()).filter(Boolean),
+        consent: document.getElementById('consent').checked,
+        timestamp: new Date().toISOString()
+      };
+
+      const res = await fetch('/api/trips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        alert('Trip saved successfully!');
+        form.reset();
+        fetchTrips();
+      } else {
+        alert('Error saving trip. Make sure consent is checked.');
+      }
+    });
+
+    // Load trips on startup
+    fetchTrips();
+  </script>
+</body>
+</html> -->
